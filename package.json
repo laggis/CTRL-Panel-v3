@@ -1,0 +1,14 @@
+{
+  "name": "script-control-panel",
+  "version": "1.0.0",
+  "description": "Web-based control panel for managing Node.js and Python scripts",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "express-session": "^1.17.3",
+    "bcrypt": "^5.1.0"
+  }
+}
