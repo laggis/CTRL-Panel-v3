@@ -516,6 +516,13 @@ header{display:flex;align-items:center;justify-content:space-between;padding:0 1
         </select>
       </div>
     </div>
+    <div class="toggle-row" style="margin-bottom:12px;">
+      <div>
+        <div class="toggle-row-label">⚡ Auto-start on panel boot</div>
+        <div class="toggle-row-sub">Start this script automatically when the panel starts</div>
+      </div>
+      <div class="toggle-switch" id="new-autostart" onclick="toggleSwitch(this)"></div>
+    </div>
     <div class="form-group"><label class="form-label">Env Variables</label><input class="form-input" id="new-env" placeholder="TOKEN=abc123 DEBUG=true"><div class="form-hint">Space-separated KEY=VALUE</div></div>
     <div class="form-group"><label class="form-label">Tags</label><input class="form-input" id="new-tags" placeholder="production, discord, v2"><div class="form-hint">Comma-separated labels</div></div>
     <div class="form-group"><label class="form-label">Description / Notes</label><input class="form-input" id="new-desc" placeholder="What does this script do?"></div>
@@ -588,6 +595,13 @@ header{display:flex;align-items:center;justify-content:space-between;padding:0 1
           <option value="never">Never</option>
         </select>
       </div>
+    </div>
+    <div class="toggle-row" style="margin-bottom:12px;">
+      <div>
+        <div class="toggle-row-label">⚡ Auto-start on panel boot</div>
+        <div class="toggle-row-sub">Start this script automatically when the panel starts</div>
+      </div>
+      <div class="toggle-switch" id="edit-autostart" onclick="toggleSwitch(this)"></div>
     </div>
     <div class="form-group"><label class="form-label">Env Variables</label><input class="form-input" id="edit-env" placeholder="TOKEN=abc123 DEBUG=true"><div class="form-hint">Space-separated KEY=VALUE</div></div>
     <div class="form-group"><label class="form-label">Description / Notes</label><input class="form-input" id="edit-desc"></div>
@@ -1036,6 +1050,8 @@ function openEditModal(id){
   document.getElementById('edit-path').value=p.path||'';
   document.getElementById('edit-cwd').value=p.cwd||'';
   document.getElementById('edit-autorestart').value=p.autoRestart||'on-failure';
+  const editAs = document.getElementById('edit-autostart');
+  if(p.autoStart){ editAs.classList.add('on'); } else { editAs.classList.remove('on'); }
   document.getElementById('edit-env').value = typeof p.env === 'object' ? Object.entries(p.env||{}).map(([k,v])=>`${k}=${v}`).join(' ') : (p.env||'');
   document.getElementById('edit-desc').value=p.description||'';
   onEditTypeChange();
@@ -1049,7 +1065,7 @@ async function saveEditProcess(){
   if(!name||!pathVal){toast(type==='npm_start'?'Name and working directory required':'Name and path required','error');return;}
   const cwdRaw=document.getElementById('edit-cwd').value.trim();
   const cwd=type==='npm_start'?(cwdRaw||pathVal):(cwdRaw||undefined);
-  const r=await api('PATCH',`/api/processes/${id}`,{name,type,path:pathVal,cwd,env:document.getElementById('edit-env').value.trim(),autoRestart:document.getElementById('edit-autorestart').value,description:document.getElementById('edit-desc').value.trim()});
+  const r=await api('PATCH',`/api/processes/${id}`,{name,type,path:pathVal,cwd,env:document.getElementById('edit-env').value.trim(),autoRestart:document.getElementById('edit-autorestart').value,autoStart:document.getElementById('edit-autostart').classList.contains('on'),description:document.getElementById('edit-desc').value.trim()});
   if(r){closeModal('edit-modal');toast(`"${name}" updated`,'success');}
 }
 async function addProcess(){
@@ -1061,8 +1077,8 @@ async function addProcess(){
   const cwd=type==='npm_start'?(cwdRaw||pathVal):(cwdRaw||undefined);
   const tagsRaw=document.getElementById('new-tags').value.trim();
   const tags=tagsRaw?tagsRaw.split(',').map(t=>t.trim()).filter(Boolean):[];
-  const r=await api('POST','/api/processes',{name,type,path:pathVal,cwd,env:document.getElementById('new-env').value.trim(),autoRestart:document.getElementById('new-autorestart').value,description:document.getElementById('new-desc').value.trim(),tags});
-  if(r){closeModal('process-modal');['new-name','new-path','new-cwd','new-env','new-tags','new-desc'].forEach(i=>document.getElementById(i).value='');document.getElementById('new-type').value='discord_py';onTypeChange();toast(`"${name}" registered`,'success');}
+  const r=await api('POST','/api/processes',{name,type,path:pathVal,cwd,env:document.getElementById('new-env').value.trim(),autoRestart:document.getElementById('new-autorestart').value,autoStart:document.getElementById('new-autostart').classList.contains('on'),description:document.getElementById('new-desc').value.trim(),tags});
+  if(r){closeModal('process-modal');['new-name','new-path','new-cwd','new-env','new-tags','new-desc'].forEach(i=>document.getElementById(i).value='');document.getElementById('new-type').value='discord_py';document.getElementById('new-autostart').classList.remove('on');onTypeChange();toast(`"${name}" registered`,'success');}
 }
 
 // ── Tags ──────────────────────────────────────
@@ -1154,7 +1170,7 @@ function renderProcesses(){
     return `<div class="process-card ${p.status}${sel}" data-id="${p.id}" onclick="selectProcess('${p.id}')">
       <div class="process-icon ${m.iconClass}">${m.icon}</div>
       <div class="process-info">
-        <div class="process-name">${esc(p.name)}${tagHtml}</div>
+        <div class="process-name">${esc(p.name)}${p.autoStart?'<span style="font-size:9px;color:var(--yellow);margin-left:4px;" title="Auto-starts on panel boot">⚡</span>':''}${tagHtml}</div>
         <div class="process-meta">
           <span class="type-tag ${m.tagClass}">${m.label}</span>
           <span title="${esc(p.path)}">${esc(shortPath(p.path))}</span>

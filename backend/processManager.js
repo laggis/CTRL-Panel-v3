@@ -35,6 +35,16 @@ class ProcessManager extends EventEmitter {
     const saved = this.config.load();
     saved.forEach(proc => this._initRuntime(proc));
 
+    // Auto-start processes marked with autoStart after a short delay
+    // (gives the server a moment to finish initializing)
+    setTimeout(() => {
+      const toStart = Object.values(this.procs).filter(r => r.autoStart);
+      if (toStart.length > 0) {
+        console.log(`[ProcessManager] Auto-starting ${toStart.length} process(es)...`);
+        toStart.forEach(r => this.start(r.id));
+      }
+    }, 1500);
+
     // Poll CPU/mem every 5s for running processes
     this._statsTimer = setInterval(() => this._pollStats(), 5000);
   }
@@ -52,6 +62,7 @@ class ProcessManager extends EventEmitter {
       crashCount:      0,   // consecutive failure counter (resets on clean start)
       _stopRequested:  false,
       _restartTimer:   null,
+      autoStart:       proc.autoStart || false,
       cpu:             '-',
       mem:             '-',
       logs:            [],
@@ -115,6 +126,7 @@ class ProcessManager extends EventEmitter {
       cwd:         r.cwd,
       env:         r.env,
       autoRestart: r.autoRestart,
+      autoStart:   r.autoStart || false,
       description: r.description || '',
       status:      r.status,
       pid:         r.pid,
@@ -129,7 +141,7 @@ class ProcessManager extends EventEmitter {
     this._initRuntime(procDef);
     this.config.save(Object.values(this.procs).map(r => ({
       id: r.id, name: r.name, type: r.type, path: r.path,
-      cwd: r.cwd, env: r.env, autoRestart: r.autoRestart, description: r.description,
+      cwd: r.cwd, env: r.env, autoRestart: r.autoRestart, autoStart: r.autoStart || false, description: r.description,
     })));
     return this.get(procDef.id);
   }
@@ -138,11 +150,11 @@ class ProcessManager extends EventEmitter {
     const runtime = this.procs[id];
     if (!runtime) return null;
     // Allowed editable fields
-    const allowed = ['name', 'type', 'path', 'cwd', 'env', 'autoRestart', 'description'];
+    const allowed = ['name', 'type', 'path', 'cwd', 'env', 'autoRestart', 'autoStart', 'description'];
     allowed.forEach(k => { if (fields[k] !== undefined) runtime[k] = fields[k]; });
     this.config.save(Object.values(this.procs).map(r => ({
       id: r.id, name: r.name, type: r.type, path: r.path,
-      cwd: r.cwd, env: r.env, autoRestart: r.autoRestart, description: r.description,
+      cwd: r.cwd, env: r.env, autoRestart: r.autoRestart, autoStart: r.autoStart || false, description: r.description,
     })));
     return this.get(id);
   }
@@ -154,7 +166,7 @@ class ProcessManager extends EventEmitter {
     delete this.procs[id];
     this.config.save(Object.values(this.procs).map(r => ({
       id: r.id, name: r.name, type: r.type, path: r.path,
-      cwd: r.cwd, env: r.env, autoRestart: r.autoRestart, description: r.description,
+      cwd: r.cwd, env: r.env, autoRestart: r.autoRestart, autoStart: r.autoStart || false, description: r.description,
     })));
     return true;
   }
