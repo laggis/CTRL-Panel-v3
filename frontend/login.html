@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CTRL Panel — Login</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+<style>
+  :root { --bg:#0a0c10;--bg2:#0f1218;--bg3:#151a22;--border2:#252d3a;--accent:#00d4ff;--green:#00ff88;--red:#ff3b5c;--text:#e2e8f0;--muted:#4a5568; }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{background:var(--bg);color:var(--text);font-family:'JetBrains Mono',monospace;min-height:100vh;display:flex;align-items:center;justify-content:center;overflow:hidden;}
+  body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(0,212,255,0.04) 1px,transparent 1px),linear-gradient(90deg,rgba(0,212,255,0.04) 1px,transparent 1px);background-size:40px 40px;animation:gridScroll 20s linear infinite;pointer-events:none;}
+  @keyframes gridScroll{to{background-position:40px 40px;}}
+  .orb{position:fixed;border-radius:50%;filter:blur(80px);opacity:.12;pointer-events:none;}
+  .orb1{width:400px;height:400px;background:var(--accent);top:-100px;right:-100px;animation:float1 8s ease-in-out infinite;}
+  .orb2{width:300px;height:300px;background:#7c3aed;bottom:-80px;left:-80px;animation:float2 10s ease-in-out infinite;}
+  @keyframes float1{0%,100%{transform:translate(0,0)}50%{transform:translate(-20px,20px)}}
+  @keyframes float2{0%,100%{transform:translate(0,0)}50%{transform:translate(20px,-20px)}}
+  .card{position:relative;z-index:1;background:var(--bg2);border:1px solid var(--border2);border-radius:16px;padding:40px;width:400px;max-width:95vw;box-shadow:0 32px 80px rgba(0,0,0,.6);animation:cardIn .4s ease;}
+  @keyframes cardIn{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:none}}
+  .card-header{text-align:center;margin-bottom:30px;}
+  .logo{font-family:'Syne',sans-serif;font-size:28px;font-weight:800;display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:6px;}
+  .logo-bracket{color:var(--accent);}
+  .logo-dot{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 10px var(--green);animation:pulse 2s infinite;}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+  .card-sub{font-size:11px;color:var(--muted);}
+  .step{display:none;animation:fadeIn .25s ease;}
+  .step.active{display:block;}
+  @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+  .form-group{margin-bottom:15px;}
+  .form-label{display:block;font-size:10px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);margin-bottom:6px;}
+  .form-input{width:100%;background:var(--bg3);border:1px solid var(--border2);border-radius:7px;padding:11px 14px;font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--text);outline:none;transition:border-color .2s,box-shadow .2s;}
+  .form-input:focus{border-color:rgba(0,212,255,.5);box-shadow:0 0 0 3px rgba(0,212,255,.08);}
+  .form-input::placeholder{color:var(--muted);}
+  .otp-input{text-align:center;font-size:22px;letter-spacing:8px;font-weight:700;}
+  .btn{width:100%;padding:12px;background:linear-gradient(135deg,rgba(0,212,255,.15),rgba(0,212,255,.08));border:1px solid rgba(0,212,255,.35);border-radius:7px;color:var(--accent);font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600;cursor:pointer;transition:all .2s;margin-top:8px;letter-spacing:.5px;}
+  .btn:hover{background:linear-gradient(135deg,rgba(0,212,255,.22),rgba(0,212,255,.12));box-shadow:0 0 20px rgba(0,212,255,.1);}
+  .btn:disabled{opacity:.5;cursor:not-allowed;}
+  .btn-back{background:none;border:1px solid var(--border2);color:var(--muted);margin-top:10px;}
+  .btn-back:hover{color:var(--text);box-shadow:none;}
+  .error-msg{background:rgba(255,59,92,.1);border:1px solid rgba(255,59,92,.25);border-radius:6px;padding:10px 14px;font-size:11px;color:var(--red);margin-bottom:14px;display:none;}
+  .twofa-info{background:rgba(0,212,255,.07);border:1px solid rgba(0,212,255,.2);border-radius:8px;padding:14px;margin-bottom:16px;font-size:11px;color:var(--muted);line-height:1.6;}
+  .twofa-info strong{color:var(--text);}
+  .footer-note{text-align:center;margin-top:20px;font-size:10px;color:var(--muted);}
+</style>
+</head>
+<body>
+<div class="orb orb1"></div>
+<div class="orb orb2"></div>
+<div class="card">
+  <div class="card-header">
+    <div class="logo"><span class="logo-bracket">[</span><span style="color:var(--text)">CTRL</span><span class="logo-bracket">]</span><div class="logo-dot"></div></div>
+    <div class="card-sub" id="card-sub">script & bot manager — sign in</div>
+  </div>
+
+  <!-- Step 1: Username + Password -->
+  <div class="step active" id="step-login">
+    <div class="error-msg" id="err1"></div>
+    <div class="form-group">
+      <label class="form-label">Username</label>
+      <input class="form-input" id="username" type="text" placeholder="admin" autocomplete="username" onkeydown="if(event.key==='Enter')doLogin()">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Password</label>
+      <input class="form-input" id="password" type="password" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
+    </div>
+    <button class="btn" id="btn-login" onclick="doLogin()">Sign In →</button>
+    <div class="footer-note">Default: admin / admin123</div>
+  </div>
+
+  <!-- Step 2: 2FA OTP -->
+  <div class="step" id="step-2fa">
+    <div class="twofa-info">
+      <strong>Two-Factor Authentication</strong><br>
+      Open your authenticator app and enter the 6-digit code for <strong>CTRL Panel</strong>.
+    </div>
+    <div class="error-msg" id="err2"></div>
+    <div class="form-group">
+      <label class="form-label">Authentication Code</label>
+      <input class="form-input otp-input" id="otp" type="text" inputmode="numeric" maxlength="6" placeholder="000000" autocomplete="one-time-code" onkeydown="if(event.key==='Enter')do2fa()" oninput="autoSubmit2fa(this)">
+    </div>
+    <button class="btn" id="btn-2fa" onclick="do2fa()">Verify →</button>
+    <button class="btn btn-back" onclick="goBack()">← Back</button>
+  </div>
+</div>
+
+<script>
+  if (localStorage.getItem('ctrl_token')) window.location.href = '/';
+  let partialToken = null;
+
+  async function doLogin() {
+    const username = document.getElementById('username').value.trim();
+    const password = document.getElementById('password').value;
+    const btn = document.getElementById('btn-login');
+    if (!username || !password) { showErr('err1','Enter username and password'); return; }
+    btn.disabled = true; btn.textContent = 'Signing in...';
+    hideErr('err1');
+    try {
+      const res  = await fetch('/api/auth/login', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({username,password}) });
+      const data = await res.json();
+      if (!res.ok) { showErr('err1', data.error||'Login failed'); btn.disabled=false; btn.textContent='Sign In →'; return; }
+      if (data.requires2fa) {
+        partialToken = data.partialToken;
+        document.getElementById('step-login').classList.remove('active');
+        document.getElementById('step-2fa').classList.add('active');
+        document.getElementById('card-sub').textContent = '2-factor authentication';
+        setTimeout(() => document.getElementById('otp').focus(), 100);
+        btn.disabled=false; btn.textContent='Sign In →';
+        return;
+      }
+      complete(data);
+    } catch(e) { showErr('err1','Cannot connect to server'); btn.disabled=false; btn.textContent='Sign In →'; }
+  }
+
+  async function do2fa() {
+    const otp = document.getElementById('otp').value.replace(/\s/g,'');
+    const btn = document.getElementById('btn-2fa');
+    if (otp.length !== 6) { showErr('err2','Enter the 6-digit code'); return; }
+    btn.disabled=true; btn.textContent='Verifying...';
+    hideErr('err2');
+    try {
+      const res  = await fetch('/api/auth/2fa/verify', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({partialToken,otp}) });
+      const data = await res.json();
+      if (!res.ok) { showErr('err2',data.error||'Invalid code'); btn.disabled=false; btn.textContent='Verify →'; document.getElementById('otp').value=''; return; }
+      complete(data);
+    } catch(e) { showErr('err2','Server error'); btn.disabled=false; btn.textContent='Verify →'; }
+  }
+
+  function autoSubmit2fa(el) {
+    if (el.value.replace(/\s/g,'').length === 6) do2fa();
+  }
+
+  function goBack() {
+    document.getElementById('step-2fa').classList.remove('active');
+    document.getElementById('step-login').classList.add('active');
+    document.getElementById('card-sub').textContent = 'script & bot manager — sign in';
+    document.getElementById('otp').value = '';
+    partialToken = null;
+  }
+
+  function complete(data) {
+    localStorage.setItem('ctrl_token', data.token);
+    localStorage.setItem('ctrl_user', JSON.stringify(data.user));
+    window.location.href = '/';
+  }
+
+  function showErr(id, msg) { const e=document.getElementById(id); e.textContent=msg; e.style.display='block'; }
+  function hideErr(id) { document.getElementById(id).style.display='none'; }
+
+  document.getElementById('username').focus();
+</script>
+</body>
+</html>

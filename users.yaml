@@ -1,5 +1,0 @@
-users:
-  admin:
-    created_at: '2025-01-01T09:31:25+01:00'
-    password: d70835900720508ebd0d7c329be76923$2e3552655632ed26c9f76226c5a088d80c26f24dbdfa588450b6f92f96c82d13
-    role: admin
