@@ -114,6 +114,19 @@ header{display:flex;align-items:center;justify-content:space-between;padding:0 1
 .tag-bat{background:rgba(0,120,215,.15);color:#5db8ff;}
 .tag-ps1{background:rgba(0,188,212,.15);color:#00d4ff;}
 .user-tag{padding:1px 6px;border-radius:10px;font-size:9px;font-weight:600;background:rgba(124,58,237,.15);color:#a78bfa;border:1px solid rgba(124,58,237,.2);}
+.gc-swatch{display:inline-block;width:22px;height:22px;border-radius:50%;cursor:pointer;border:2px solid transparent;transition:all .15s;}
+.gc-swatch.selected,.gc-swatch:hover{transform:scale(1.2);border-color:#fff;}
+.group-header{display:flex;align-items:center;gap:8px;padding:8px 4px 5px;margin-top:6px;border-bottom:1px solid var(--border);margin-bottom:6px;}
+.group-header-icon{font-size:15px;}
+.group-header-name{font-size:11px;font-weight:700;color:var(--text);flex:1;}
+.group-header-actions{display:flex;gap:4px;}
+.group-header-btn{font-size:10px;padding:2px 7px;border-radius:4px;border:1px solid var(--border);background:var(--bg3);color:var(--muted);cursor:pointer;transition:all .15s;}
+.group-header-btn:hover{color:var(--text);border-color:var(--border2);}
+.group-header-btn.start-btn:hover{color:var(--green);border-color:var(--green);}
+.group-header-btn.stop-btn:hover{color:var(--red);border-color:var(--red);}
+.gmm-row{display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:5px;background:var(--bg2);border:1px solid var(--border);cursor:pointer;}
+.gmm-row:hover{border-color:var(--border2);}
+.gmm-row input[type=checkbox]{accent-color:var(--accent);width:14px;height:14px;cursor:pointer;}
 .tag-production{background:rgba(255,59,92,.12);color:var(--red);border:1px solid rgba(255,59,92,.2);}
 .tag-test{background:rgba(255,184,0,.1);color:var(--yellow);border:1px solid rgba(255,184,0,.2);}
 .tag-staging{background:rgba(0,212,255,.1);color:var(--accent);border:1px solid rgba(0,212,255,.2);}
@@ -227,6 +240,7 @@ header{display:flex;align-items:center;justify-content:space-between;padding:0 1
 
 /* MODALS */
 .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.75);backdrop-filter:blur(4px);z-index:200;display:none;align-items:center;justify-content:center;padding:16px;}
+#filebrowser-modal{z-index:300;}
 .modal-overlay.open{display:flex;}
 .modal{background:var(--bg2);border:1px solid var(--border2);border-radius:12px;width:100%;max-width:480px;padding:22px;box-shadow:0 24px 64px rgba(0,0,0,.5);max-height:90vh;overflow-y:auto;}
 .modal-title{font-family:'Syne',sans-serif;font-size:14px;font-weight:700;margin-bottom:16px;}
@@ -340,6 +354,7 @@ header{display:flex;align-items:center;justify-content:space-between;padding:0 1
     <div class="sidebar-label">Dashboard</div>
     <div class="nav-item active" onclick="showView('dash-view',this);setFilter('all')"><span class="nav-icon">⬡</span>All Scripts<span class="nav-badge" id="nb-all">0</span></div>
     <div class="nav-item" onclick="showView('dash-view',this);setFilter('running')"><span class="nav-icon">▶</span>Running<span class="nav-badge g" id="nb-run">0</span></div>
+    <div class="nav-item" onclick="showView('dash-view',this);setFilter('stopped')"><span class="nav-icon">⏹</span>Stopped<span class="nav-badge" id="nb-stop">0</span></div>
     <div class="nav-item" onclick="showView('dash-view',this);setFilter('error')"><span class="nav-icon">⚠</span>Errors<span class="nav-badge r" id="nb-err">0</span></div>
   </div>
   <div class="sidebar-section">
@@ -349,6 +364,10 @@ header{display:flex;align-items:center;justify-content:space-between;padding:0 1
     <div class="nav-item" onclick="showView('dash-view',this);setFilter('python')"><span class="nav-icon">🐍</span>Python</div>
     <div class="nav-item" onclick="showView('dash-view',this);setFilter('node')"><span class="nav-icon">⬡</span>Node.js</div>
     <div class="nav-item" onclick="showView('dash-view',this);setFilter('shell')"><span class="nav-icon">💻</span>Shell</div>
+  </div>
+  <div class="sidebar-section">
+    <div class="sidebar-label" style="display:flex;align-items:center;justify-content:space-between;">Groups<span onclick="openGroupModal()" style="cursor:pointer;font-size:13px;color:var(--accent);line-height:1" title="New group">＋</span></div>
+    <div id="groups-nav"></div>
   </div>
   <div class="sidebar-section">
     <div class="sidebar-label">Manage</div>
@@ -526,6 +545,50 @@ header{display:flex;align-items:center;justify-content:space-between;padding:0 1
     <div class="form-group"><label class="form-label">Env Variables</label><input class="form-input" id="new-env" placeholder="TOKEN=abc123 DEBUG=true"><div class="form-hint">Space-separated KEY=VALUE</div></div>
     <div class="form-group"><label class="form-label">Tags</label><input class="form-input" id="new-tags" placeholder="production, discord, v2"><div class="form-hint">Comma-separated labels</div></div>
     <div class="form-group"><label class="form-label">Description / Notes</label><input class="form-input" id="new-desc" placeholder="What does this script do?"></div>
+    <div class="form-group"><label class="form-label">Port (optional)</label><input class="form-input" id="new-port" placeholder="e.g. 20002" type="number" min="1" max="65535"><div class="form-hint">If set, status stays 'starting' until this port is actually listening</div></div>
+
+    <div style="border-top:1px solid var(--border);margin:14px 0 12px;padding-top:12px;">
+      <div style="font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);margin-bottom:10px;">🚀 Startup Command</div>
+      <div class="form-group">
+        <label class="form-label">Launch Command</label>
+        <div style="display:flex;gap:6px;">
+          <select class="form-select" id="new-cmd-preset" onchange="applyNewCmdPreset()" style="flex:0 0 auto;width:160px;">
+            <option value="">— default —</option>
+            <optgroup label="Python">
+              <option value="python">python</option>
+              <option value="python3">python3</option>
+              <option value="python3.9">python3.9</option>
+              <option value="python3.10">python3.10</option>
+              <option value="python3.11">python3.11</option>
+              <option value="python3.12">python3.12</option>
+              <option value="python3.13">python3.13</option>
+              <option value="py">py (Windows)</option>
+              <option value="py3">py3 (Windows)</option>
+            </optgroup>
+            <optgroup label="Node.js">
+              <option value="node">node</option>
+              <option value="node18">node18</option>
+              <option value="node20">node20</option>
+              <option value="bun">bun</option>
+              <option value="deno">deno run</option>
+            </optgroup>
+            <optgroup label="Other">
+              <option value="bash">bash</option>
+              <option value="sh">sh</option>
+              <option value="zsh">zsh</option>
+              <option value="custom">✏️ Custom…</option>
+            </optgroup>
+          </select>
+          <input class="form-input" id="new-custom-cmd" placeholder="e.g. python3.12" style="flex:1;" oninput="document.getElementById('new-cmd-preset').value='custom'">
+        </div>
+        <div class="form-hint">Overrides the default launch command for this script type</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Extra Arguments <span style="font-weight:400;color:var(--muted)">(optional)</span></label>
+        <input class="form-input" id="new-custom-args" placeholder="e.g. -u --no-warnings">
+        <div class="form-hint">Appended after the script path when starting</div>
+      </div>
+    </div>
     <div class="modal-footer">
       <button class="btn" onclick="closeModal('process-modal')">Cancel</button>
       <button class="btn primary" onclick="addProcess()">Register</button>
@@ -542,6 +605,7 @@ header{display:flex;align-items:center;justify-content:space-between;padding:0 1
     <div id="fb-list" style="background:var(--bg);border:1px solid var(--border);border-radius:6px;height:320px;overflow-y:auto;"></div>
     <div class="modal-footer" style="margin-top:12px;">
       <button class="btn" onclick="closeModal('filebrowser-modal')">Cancel</button>
+      <button class="btn primary" id="fb-select-folder-btn" onclick="fbConfirmSelectFolder()" style="display:none;">Select Folder</button>
       <button class="btn primary" id="fb-select-btn" onclick="fbConfirmSelect()" disabled>Select File</button>
     </div>
   </div>
@@ -605,6 +669,50 @@ header{display:flex;align-items:center;justify-content:space-between;padding:0 1
     </div>
     <div class="form-group"><label class="form-label">Env Variables</label><input class="form-input" id="edit-env" placeholder="TOKEN=abc123 DEBUG=true"><div class="form-hint">Space-separated KEY=VALUE</div></div>
     <div class="form-group"><label class="form-label">Description / Notes</label><input class="form-input" id="edit-desc"></div>
+    <div class="form-group"><label class="form-label">Port (optional)</label><input class="form-input" id="edit-port" placeholder="e.g. 20002" type="number" min="1" max="65535"><div class="form-hint">If set, status stays 'starting' until this port is actually listening</div></div>
+
+    <div style="border-top:1px solid var(--border);margin:14px 0 12px;padding-top:12px;">
+      <div style="font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);margin-bottom:10px;">🚀 Startup Command</div>
+      <div class="form-group">
+        <label class="form-label">Launch Command</label>
+        <div style="display:flex;gap:6px;">
+          <select class="form-select" id="edit-cmd-preset" onchange="applyEditCmdPreset()" style="flex:0 0 auto;width:160px;">
+            <option value="">— default —</option>
+            <optgroup label="Python">
+              <option value="python">python</option>
+              <option value="python3">python3</option>
+              <option value="python3.9">python3.9</option>
+              <option value="python3.10">python3.10</option>
+              <option value="python3.11">python3.11</option>
+              <option value="python3.12">python3.12</option>
+              <option value="python3.13">python3.13</option>
+              <option value="py">py (Windows)</option>
+              <option value="py3">py3 (Windows)</option>
+            </optgroup>
+            <optgroup label="Node.js">
+              <option value="node">node</option>
+              <option value="node18">node18</option>
+              <option value="node20">node20</option>
+              <option value="bun">bun</option>
+              <option value="deno">deno run</option>
+            </optgroup>
+            <optgroup label="Other">
+              <option value="bash">bash</option>
+              <option value="sh">sh</option>
+              <option value="zsh">zsh</option>
+              <option value="custom">✏️ Custom…</option>
+            </optgroup>
+          </select>
+          <input class="form-input" id="edit-custom-cmd" placeholder="e.g. python3.12" style="flex:1;" oninput="document.getElementById('edit-cmd-preset').value='custom'">
+        </div>
+        <div class="form-hint">Overrides the default launch command for this script type</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Extra Arguments <span style="font-weight:400;color:var(--muted)">(optional)</span></label>
+        <input class="form-input" id="edit-custom-args" placeholder="e.g. -u --no-warnings">
+        <div class="form-hint">Appended after the script path when starting</div>
+      </div>
+    </div>
     <div class="modal-footer">
       <button class="btn" onclick="closeModal('edit-modal')">Cancel</button>
       <button class="btn primary" onclick="saveEditProcess()">Save Changes</button>
@@ -650,6 +758,44 @@ header{display:flex;align-items:center;justify-content:space-between;padding:0 1
     <div class="modal-footer">
       <button class="btn" onclick="closeModal('tags-modal')">Cancel</button>
       <button class="btn primary" onclick="saveTags()">Save Tags</button>
+    </div>
+  </div>
+</div>
+
+<!-- Group Create/Edit Modal -->
+<div class="modal-overlay" id="group-modal">
+  <div class="modal" style="max-width:380px">
+    <div class="modal-header"><span id="group-modal-title">New Group</span><button class="modal-close" onclick="closeModal('group-modal')">✕</button></div>
+    <input type="hidden" id="group-modal-id">
+    <div class="form-group"><label class="form-label">Group Name</label><input class="form-input" id="group-modal-name" placeholder="e.g. Discord Bots"></div>
+    <div class="form-group"><label class="form-label">Icon (emoji)</label><input class="form-input" id="group-modal-icon" placeholder="📁" maxlength="2" style="width:70px"></div>
+    <div class="form-group"><label class="form-label">Color</label><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px" id="group-color-picker">
+      <span class="gc-swatch" data-c="#00d4ff" style="background:#00d4ff"></span>
+      <span class="gc-swatch" data-c="#7c3aed" style="background:#7c3aed"></span>
+      <span class="gc-swatch" data-c="#00c875" style="background:#00c875"></span>
+      <span class="gc-swatch" data-c="#ff3b5c" style="background:#ff3b5c"></span>
+      <span class="gc-swatch" data-c="#ffb800" style="background:#ffb800"></span>
+      <span class="gc-swatch" data-c="#f97316" style="background:#f97316"></span>
+      <span class="gc-swatch" data-c="#a855f7" style="background:#a855f7"></span>
+      <span class="gc-swatch" data-c="#10b981" style="background:#10b981"></span>
+    </div></div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('group-modal')">Cancel</button>
+      <button class="btn primary" onclick="saveGroup()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Group Members Modal -->
+<div class="modal-overlay" id="group-members-modal">
+  <div class="modal" style="max-width:460px">
+    <div class="modal-header"><span id="gmm-title">Manage Members</span><button class="modal-close" onclick="closeModal('group-members-modal')">✕</button></div>
+    <input type="hidden" id="gmm-group-id">
+    <div style="font-size:11px;color:var(--muted);margin-bottom:10px">Check the scripts that belong to this group</div>
+    <div id="gmm-list" style="max-height:320px;overflow-y:auto;display:flex;flex-direction:column;gap:4px"></div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('group-members-modal')">Cancel</button>
+      <button class="btn primary" onclick="saveGroupMembers()">Save</button>
     </div>
   </div>
 </div>
@@ -720,6 +866,7 @@ if (currentUser) {
 // ── State ────────────────────────────────────
 let processes={}, schedules=[], uptimeStore={}, webhookConfig={};
 let selectedId=null, logPaused=false, currentFilter='all', ws=null;
+let groups=[], selectedGroupColor='#00d4ff';
 let isDark=true, notesDirty=false;
 
 // ── Theme ────────────────────────────────────
@@ -798,9 +945,14 @@ function handleWS(data){
       loadWebhookForm();
       load2faStatus();
       if(selectedId&&processes[selectedId]){fetchLogs(selectedId);renderUptimePanel();renderSchedPanel();}
+      // Load groups separately (not in snapshot)
+      loadGroups();
       break;
+    case 'group_created': groups.push(data.group); renderGroupsNav(); renderProcesses(); break;
+    case 'group_updated': {const gi=groups.findIndex(g=>g.id===data.group.id);if(gi>=0)groups[gi]=data.group;renderGroupsNav();renderProcesses();} break;
+    case 'group_deleted': groups=groups.filter(g=>g.id!==data.id); if(currentFilter===`group:${data.id}`)setFilter('all'); renderGroupsNav(); renderProcesses(); break;
     case 'status':
-      if(processes[data.id]){processes[data.id].status=data.status;processes[data.id].pid=data.pid;renderProcesses();updateStats();}
+      if(processes[data.id]){processes[data.id].status=data.status;processes[data.id].pid=data.pid;renderProcesses();updateStats();renderGroupsNav();}
       break;
     case 'stats':
       if(processes[data.id]){processes[data.id].cpu=data.cpu;processes[data.id].mem=data.mem;}
@@ -933,9 +1085,18 @@ function openFileBrowser(inputId) {
 async function fbNavigate(dirPath) {
   const list = document.getElementById('fb-list');
   const pathEl = document.getElementById('fb-path');
+  const selectFolderBtn = document.getElementById('fb-select-folder-btn');
   list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--muted);font-size:11px;">Loading...</div>';
   fbSelectedFile = null;
   document.getElementById('fb-select-btn').disabled = true;
+
+  // Show "Select Folder" button if we're in a directory (not at drive list)
+  if (dirPath) {
+    selectFolderBtn.style.display = 'block';
+    selectFolderBtn.dataset.path = dirPath;
+  } else {
+    selectFolderBtn.style.display = 'none';
+  }
 
   const url = dirPath ? `/api/fs/browse?path=${encodeURIComponent(dirPath)}` : '/api/fs/browse';
   const token = localStorage.getItem('ctrl_token');
@@ -964,8 +1125,8 @@ async function fbNavigate(dirPath) {
     } else if (item.type === 'dir') {
       list.appendChild(fbRow('📁', item.name, 'dir', () => fbNavigate(item.fullPath)));
     } else {
-      const icon = item.runnable ? fileIcon(item.ext) : '📄';
-      const row = fbRow(icon, item.name, item.runnable ? 'file runnable' : 'file', null, item.fullPath);
+      const icon = fileIcon(item.ext);
+      const row = fbRow(icon, item.name, 'file', null, item.fullPath);
       list.appendChild(row);
     }
   }
@@ -985,13 +1146,10 @@ function fbRow(icon, label, cls, onClick, filePath) {
   row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:7px 12px;cursor:pointer;font-size:11px;font-family:"JetBrains Mono",monospace;border-bottom:1px solid var(--border);transition:background .1s;';
   row.innerHTML = `<span style="flex-shrink:0">${icon}</span><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${label}</span>`;
 
-  if (cls.includes('runnable')) {
-    row.style.color = 'var(--accent)';
-  } else if (cls === 'dir' || cls === 'drive') {
+  if (cls === 'dir' || cls === 'drive') {
     row.style.color = 'var(--text)';
   } else {
     row.style.color = 'var(--muted)';
-    row.style.cursor = 'default';
   }
 
   row.onmouseenter = () => { row.style.background = 'var(--bg3)'; };
@@ -999,7 +1157,7 @@ function fbRow(icon, label, cls, onClick, filePath) {
 
   if (onClick) {
     row.onclick = onClick;
-  } else if (filePath && cls.includes('runnable')) {
+  } else if (filePath) {
     row.onclick = () => {
       // Deselect previous
       document.querySelectorAll('#fb-list ._fb-selected').forEach(el => {
@@ -1027,12 +1185,30 @@ function fbConfirmSelect() {
   toast(`Path set: ${fbSelectedFile.split(/[\\/]/).pop()}`, 'success');
 }
 
+function fbConfirmSelectFolder() {
+  const path = document.getElementById('fb-select-folder-btn').dataset.path;
+  if (!path || !fbTargetInput) return;
+  document.getElementById(fbTargetInput).value = path;
+  closeModal('filebrowser-modal');
+  toast(`Folder set: ${path.split(/[\\/]/).pop() || path}`, 'success');
+}
+
 function onTypeChange(){
   const type=document.getElementById('new-type').value;
   const isNpm=type==='npm_start';
   document.getElementById('path-label').textContent=isNpm?'Working Directory (where package.json is)':'Script Path (absolute)';
   document.getElementById('new-path').placeholder=isNpm?'C:\\bots\\mybot':'C:\\bots\\mybot\\main.py';
   document.getElementById('path-hint').textContent=isNpm?'Point to the folder containing your package.json — npm start will run from here.':'';
+}
+function applyNewCmdPreset(){
+  const val=document.getElementById('new-cmd-preset').value;
+  if(val&&val!=='custom') document.getElementById('new-custom-cmd').value=val;
+  if(val==='') document.getElementById('new-custom-cmd').value='';
+}
+function applyEditCmdPreset(){
+  const val=document.getElementById('edit-cmd-preset').value;
+  if(val&&val!=='custom') document.getElementById('edit-custom-cmd').value=val;
+  if(val==='') document.getElementById('edit-custom-cmd').value='';
 }
 function onEditTypeChange(){
   const type=document.getElementById('edit-type').value;
@@ -1054,6 +1230,14 @@ function openEditModal(id){
   if(p.autoStart){ editAs.classList.add('on'); } else { editAs.classList.remove('on'); }
   document.getElementById('edit-env').value = typeof p.env === 'object' ? Object.entries(p.env||{}).map(([k,v])=>`${k}=${v}`).join(' ') : (p.env||'');
   document.getElementById('edit-desc').value=p.description||'';
+  document.getElementById('edit-port').value=p.port||'';
+  // Startup command
+  const cmd=p.customCmd||'';
+  document.getElementById('edit-custom-cmd').value=cmd;
+  document.getElementById('edit-custom-args').value=p.customArgs||'';
+  // Set preset dropdown to match saved cmd, or 'custom' if it's something unusual
+  const presetVals=['python','python3','python3.9','python3.10','python3.11','python3.12','python3.13','py','py3','node','node18','node20','bun','deno','bash','sh','zsh'];
+  document.getElementById('edit-cmd-preset').value=cmd===''?'':(presetVals.includes(cmd)?cmd:'custom');
   onEditTypeChange();
   openModal('edit-modal');
 }
@@ -1065,7 +1249,7 @@ async function saveEditProcess(){
   if(!name||!pathVal){toast(type==='npm_start'?'Name and working directory required':'Name and path required','error');return;}
   const cwdRaw=document.getElementById('edit-cwd').value.trim();
   const cwd=type==='npm_start'?(cwdRaw||pathVal):(cwdRaw||undefined);
-  const r=await api('PATCH',`/api/processes/${id}`,{name,type,path:pathVal,cwd,env:document.getElementById('edit-env').value.trim(),autoRestart:document.getElementById('edit-autorestart').value,autoStart:document.getElementById('edit-autostart').classList.contains('on'),description:document.getElementById('edit-desc').value.trim()});
+  const r=await api('PATCH',`/api/processes/${id}`,{name,type,path:pathVal,cwd,env:document.getElementById('edit-env').value.trim(),autoRestart:document.getElementById('edit-autorestart').value,autoStart:document.getElementById('edit-autostart').classList.contains('on'),description:document.getElementById('edit-desc').value.trim(),port:parseInt(document.getElementById('edit-port').value)||null,customCmd:document.getElementById('edit-custom-cmd').value.trim()||null,customArgs:document.getElementById('edit-custom-args').value.trim()||null});
   if(r){closeModal('edit-modal');toast(`"${name}" updated`,'success');}
 }
 async function addProcess(){
@@ -1077,8 +1261,8 @@ async function addProcess(){
   const cwd=type==='npm_start'?(cwdRaw||pathVal):(cwdRaw||undefined);
   const tagsRaw=document.getElementById('new-tags').value.trim();
   const tags=tagsRaw?tagsRaw.split(',').map(t=>t.trim()).filter(Boolean):[];
-  const r=await api('POST','/api/processes',{name,type,path:pathVal,cwd,env:document.getElementById('new-env').value.trim(),autoRestart:document.getElementById('new-autorestart').value,autoStart:document.getElementById('new-autostart').classList.contains('on'),description:document.getElementById('new-desc').value.trim(),tags});
-  if(r){closeModal('process-modal');['new-name','new-path','new-cwd','new-env','new-tags','new-desc'].forEach(i=>document.getElementById(i).value='');document.getElementById('new-type').value='discord_py';document.getElementById('new-autostart').classList.remove('on');onTypeChange();toast(`"${name}" registered`,'success');}
+  const r=await api('POST','/api/processes',{name,type,path:pathVal,cwd,env:document.getElementById('new-env').value.trim(),autoRestart:document.getElementById('new-autorestart').value,autoStart:document.getElementById('new-autostart').classList.contains('on'),description:document.getElementById('new-desc').value.trim(),port:parseInt(document.getElementById('new-port').value)||null,customCmd:document.getElementById('new-custom-cmd').value.trim()||null,customArgs:document.getElementById('new-custom-args').value.trim()||null,tags});
+  if(r){closeModal('process-modal');['new-name','new-path','new-cwd','new-env','new-tags','new-desc','new-port','new-custom-cmd','new-custom-args'].forEach(i=>document.getElementById(i).value='');document.getElementById('new-type').value='discord_py';document.getElementById('new-cmd-preset').value='';document.getElementById('new-autostart').classList.remove('on');onTypeChange();toast(`"${name}" registered`,'success');}
 }
 
 // ── Tags ──────────────────────────────────────
@@ -1145,6 +1329,8 @@ function renderProcesses(){
   const q=(document.getElementById('header-search').value||'').toLowerCase();
   const list=document.getElementById('processes-list');
   const all=Object.values(processes);
+  const isGroupFilter=currentFilter.startsWith('group:');
+  const groupFilterId=isGroupFilter?currentFilter.slice(6):null;
   const shown=all.filter(p=>{
     const matchText=p.name.toLowerCase().includes(q)||
       (p.tags||[]).some(t=>t.toLowerCase().includes(q))||
@@ -1153,6 +1339,10 @@ function renderProcesses(){
     if(!matchText)return false;
     if(currentFilter==='all')return true;
     if(['running','stopped','error'].includes(currentFilter))return p.status===currentFilter;
+    if(isGroupFilter){
+      const grp=groups.find(g=>g.id===groupFilterId);
+      return grp?(grp.members||[]).includes(p.id):false;
+    }
     return p.type===currentFilter;
   });
 
@@ -1161,44 +1351,86 @@ function renderProcesses(){
     return;
   }
 
-  list.innerHTML=shown.map(p=>{
-    const m=typeMeta[p.type]||typeMeta.python;
-    const sc=sbCls[p.status]||'sb-stopped';
-    const sel=selectedId===p.id?' selected':'';
-    const tagHtml=(p.tags||[]).map(t=>`<span class="user-tag tag-${t.toLowerCase()}">${esc(t)}</span>`).join('');
-    const strip=buildStrip(p.id);
-    return `<div class="process-card ${p.status}${sel}" data-id="${p.id}" onclick="selectProcess('${p.id}')">
-      <div class="process-icon ${m.iconClass}">${m.icon}</div>
-      <div class="process-info">
-        <div class="process-name">${esc(p.name)}${p.autoStart?'<span style="font-size:9px;color:var(--yellow);margin-left:4px;" title="Auto-starts on panel boot">⚡</span>':''}${tagHtml}</div>
-        <div class="process-meta">
-          <span class="type-tag ${m.tagClass}">${m.label}</span>
-          <span title="${esc(p.path)}">${esc(shortPath(p.path))}</span>
-          ${p.pid?`<span>PID ${p.pid}</span>`:''}
-          <span>↻${p.restarts||0}</span>
-        </div>
-        ${strip}
-      </div>
-      <div class="process-stats">
-        <div class="stat-row">↑${esc(p.uptime||'-')}</div>
-        <div class="stat-row">CPU<span class="stat-val">${esc(p.cpu||'-')}</span></div>
-        <div class="stat-row">MEM<span class="stat-val">${esc(p.mem||'-')}</span></div>
-      </div>
-      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">
-        <div class="status-badge ${sc}"><div class="badge-dot"></div>${p.status}</div>
-        <div class="process-actions" onclick="event.stopPropagation()">
-          <div class="action-btn start" title="Start" onclick="actionProcess('${p.id}','start')">▶</div>
-          <div class="action-btn stop" title="Stop" onclick="actionProcess('${p.id}','stop')">⏹</div>
-          <div class="action-btn restart" title="Restart" onclick="actionProcess('${p.id}','restart')">↺</div>
-          <div class="action-btn" title="Install dependencies" onclick="installDeps('${p.id}')" style="color:var(--accent);font-size:13px">📦</div>
-          <div class="action-btn" title="Edit script" onclick="openEditModal('${p.id}')" style="color:var(--muted)">✏️</div>
-          <div class="action-btn" title="Tags" onclick="openTagsModal('${p.id}')" style="color:var(--purple)">🏷</div>
-          <div class="action-btn del" title="Remove" onclick="deleteProcess('${p.id}')">🗑</div>
-        </div>
-      </div>
-    </div>`;
-  }).join('');
+  // If viewing all or a non-group filter, optionally group by group affiliation
+  let html='';
+  if(currentFilter==='all'&&!q){
+    // Render ungrouped first, then each group
+    const ungrouped=shown.filter(p=>!p.groupId);
+    const byGroup={};
+    shown.filter(p=>p.groupId).forEach(p=>{
+      if(!byGroup[p.groupId])byGroup[p.groupId]=[];
+      byGroup[p.groupId].push(p);
+    });
+    // Ungrouped processes
+    if(ungrouped.length) html+=ungrouped.map(p=>renderCard(p)).join('');
+    // Groups
+    groups.forEach(g=>{
+      const gProcs=byGroup[g.id];
+      if(!gProcs||!gProcs.length)return;
+      html+=renderGroupHeader(g);
+      html+=gProcs.map(p=>renderCard(p)).join('');
+    });
+  } else {
+    html=shown.map(p=>renderCard(p)).join('');
+  }
+
+  list.innerHTML=html;
 }
+
+function renderCard(p){
+  const m=typeMeta[p.type]||typeMeta.python;
+  const sc=sbCls[p.status]||'sb-stopped';
+  const sel=selectedId===p.id?' selected':'';
+  const tagHtml=(p.tags||[]).map(t=>`<span class="user-tag tag-${t.toLowerCase()}">${esc(t)}</span>`).join('');
+  const strip=buildStrip(p.id);
+  return `<div class="process-card ${p.status}${sel}" data-id="${p.id}" onclick="selectProcess('${p.id}')">
+    <div class="process-icon ${m.iconClass}">${m.icon}</div>
+    <div class="process-info">
+      <div class="process-name">${esc(p.name)}${p.autoStart?'<span style="font-size:9px;color:var(--yellow);margin-left:4px;" title="Auto-starts on panel boot">⚡</span>':''}${tagHtml}</div>
+      <div class="process-meta">
+        <span class="type-tag ${m.tagClass}">${m.label}</span>
+        <span title="${esc(p.path)}">${esc(shortPath(p.path))}</span>
+        ${p.pid?`<span>PID ${p.pid}</span>`:''}
+        <span>↻${p.restarts||0}</span>
+      </div>
+      ${strip}
+    </div>
+    <div class="process-stats">
+      <div class="stat-row">↑${esc(p.uptime||'-')}</div>
+      <div class="stat-row">CPU<span class="stat-val">${esc(p.cpu||'-')}</span></div>
+      <div class="stat-row">MEM<span class="stat-val">${esc(p.mem||'-')}</span></div>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">
+      <div class="status-badge ${sc}"><div class="badge-dot"></div>${p.status}</div>
+      <div class="process-actions" onclick="event.stopPropagation()">
+        <div class="action-btn start" title="Start" onclick="actionProcess('${p.id}','start')">▶</div>
+        <div class="action-btn stop" title="Stop" onclick="actionProcess('${p.id}','stop')">⏹</div>
+        <div class="action-btn restart" title="Restart" onclick="actionProcess('${p.id}','restart')">↺</div>
+        <div class="action-btn" title="Install dependencies" onclick="installDeps('${p.id}')" style="color:var(--accent);font-size:13px">📦</div>
+        <div class="action-btn" title="Edit script" onclick="openEditModal('${p.id}')" style="color:var(--muted)">✏️</div>
+        <div class="action-btn" title="Tags" onclick="openTagsModal('${p.id}')" style="color:var(--purple)">🏷</div>
+        <div class="action-btn del" title="Remove" onclick="deleteProcess('${p.id}')">🗑</div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderGroupHeader(g){
+  const c=g.color||'#00d4ff';
+  return `<div class="group-header" style="border-bottom-color:${hexAlpha(c,.3)}">
+    <span class="group-header-icon">${g.icon||'📁'}</span>
+    <span class="group-header-name" style="color:${c}">${esc(g.name)}</span>
+    <span style="font-size:10px;color:var(--muted)">${(g.members||[]).length} scripts</span>
+    <div class="group-header-actions" onclick="event.stopPropagation()">
+      <span class="group-header-btn start-btn" onclick="groupAction('${g.id}','start')">▶ Start all</span>
+      <span class="group-header-btn stop-btn" onclick="groupAction('${g.id}','stop')">⏹ Stop all</span>
+      <span class="group-header-btn" onclick="openGroupMembersModal('${g.id}')">👥 Members</span>
+      <span class="group-header-btn" onclick="openGroupModal('${g.id}')">✏️</span>
+      <span class="group-header-btn" onclick="deleteGroup('${g.id}')" style="color:var(--red)">🗑</span>
+    </div>
+  </div>`;
+}
+
 
 function buildStrip(id){
   const h=uptimeStore[id]||[];
@@ -1221,6 +1453,7 @@ function updateStats(){
   document.getElementById('hdr-stopped').textContent=stop;
   document.getElementById('nb-all').textContent=total;
   document.getElementById('nb-run').textContent=run;
+  document.getElementById('nb-stop').textContent=stop;
   document.getElementById('nb-err').textContent=err;
   document.getElementById('running-bar').style.width=total?`${(run/total)*100}%`:'0%';
   document.getElementById('page-sub').textContent=`${total} scripts — ${run} active`;
@@ -1486,6 +1719,113 @@ function fmtMs(ms){if(ms<3600000)return`${ms/60000|0}m`;if(ms<86400000)return`${
 function hexAlpha(hex,a){if(!hex||!hex.startsWith('#'))return`rgba(0,212,255,${a})`;const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);return`rgba(${r},${g},${b},${a})`;}
 function tick(){document.getElementById('hdr-time').textContent=new Date().toLocaleTimeString('en-GB',{hour12:false});}
 setInterval(tick,1000);tick();
+
+// ── Groups ────────────────────────────────────
+async function loadGroups(){
+  const data=await api('GET','/api/groups');
+  if(!data)return;
+  groups=data;
+  renderGroupsNav();
+}
+
+function renderGroupsNav(){
+  const nav=document.getElementById('groups-nav');
+  if(!nav)return;
+  if(!groups.length){
+    nav.innerHTML=`<div style="font-size:10px;color:var(--muted);padding:4px 8px">No groups yet</div>`;
+    return;
+  }
+  nav.innerHTML=groups.map(g=>{
+    const active=currentFilter===`group:${g.id}`?' active':'';
+    const c=g.color||'#00d4ff';
+    const runCount=Object.values(processes).filter(p=>(g.members||[]).includes(p.id)&&p.status==='running').length;
+    return `<div class="nav-item${active}" onclick="showView('dash-view',this);setFilter('group:${g.id}')" style="${active?`color:${c};background:${hexAlpha(c,.07)};border-color:${hexAlpha(c,.2)}`:''}">
+      <span class="nav-icon">${g.icon||'📁'}</span>${esc(g.name)}
+      <span class="nav-badge" style="${active?`color:${c};background:${hexAlpha(c,.1)};border-color:${hexAlpha(c,.2)}`:''}">
+        ${g.memberCount||0}${runCount?` <span style="color:var(--green)">●</span>`:''}
+      </span>
+    </div>`;
+  }).join('');
+}
+
+function openGroupModal(groupId){
+  const g=groupId?groups.find(g=>g.id===groupId):null;
+  document.getElementById('group-modal-title').textContent=g?'Edit Group':'New Group';
+  document.getElementById('group-modal-id').value=g?.id||'';
+  document.getElementById('group-modal-name').value=g?.name||'';
+  document.getElementById('group-modal-icon').value=g?.icon||'📁';
+  selectedGroupColor=g?.color||'#00d4ff';
+  document.querySelectorAll('.gc-swatch').forEach(s=>{
+    s.classList.toggle('selected',s.dataset.c===selectedGroupColor);
+    s.onclick=()=>{selectedGroupColor=s.dataset.c;document.querySelectorAll('.gc-swatch').forEach(x=>x.classList.remove('selected'));s.classList.add('selected');};
+  });
+  openModal('group-modal');
+}
+
+async function saveGroup(){
+  const id=document.getElementById('group-modal-id').value;
+  const name=document.getElementById('group-modal-name').value.trim();
+  const icon=document.getElementById('group-modal-icon').value.trim()||'📁';
+  const color=selectedGroupColor||'#00d4ff';
+  if(!name){toast('Name required','error');return;}
+  if(id){
+    const r=await api('PATCH',`/api/groups/${id}`,{name,icon,color});
+    if(r){closeModal('group-modal');toast(`Group "${name}" updated`,'success');}
+  }else{
+    const r=await api('POST','/api/groups',{name,icon,color});
+    if(r){closeModal('group-modal');toast(`Group "${name}" created`,'success');}
+  }
+}
+
+async function deleteGroup(id){
+  const g=groups.find(g=>g.id===id);
+  if(!confirm(`Delete group "${g?.name}"? Scripts won't be removed.`))return;
+  await api('DELETE',`/api/groups/${id}`);
+}
+
+function openGroupMembersModal(groupId){
+  const g=groups.find(g=>g.id===groupId);
+  if(!g)return;
+  document.getElementById('gmm-group-id').value=groupId;
+  document.getElementById('gmm-title').textContent=`Members — ${g.name}`;
+  const members=g.members||[];
+  const list=document.getElementById('gmm-list');
+  const allProcs=Object.values(processes).sort((a,b)=>a.name.localeCompare(b.name));
+  list.innerHTML=allProcs.map(p=>`
+    <label class="gmm-row">
+      <input type="checkbox" value="${p.id}" ${members.includes(p.id)?'checked':''}>
+      <span style="font-size:13px">${typeMeta[p.type]?.icon||'⬡'}</span>
+      <span style="flex:1;font-size:12px">${esc(p.name)}</span>
+      <span style="font-size:10px;color:var(--muted)">${typeMeta[p.type]?.label||p.type}</span>
+    </label>`).join('');
+  openModal('group-members-modal');
+}
+
+async function saveGroupMembers(){
+  const groupId=document.getElementById('gmm-group-id').value;
+  const checked=[...document.querySelectorAll('#gmm-list input[type=checkbox]:checked')].map(c=>c.value);
+  const r=await api('POST',`/api/groups/${groupId}/members`,{processIds:checked});
+  if(r){
+    // Update local group members so cards re-render immediately
+    const g=groups.find(g=>g.id===groupId);
+    if(g){g.members=checked;g.memberCount=checked.length;}
+    // Also update groupId on process objects
+    Object.values(processes).forEach(p=>{
+      if(checked.includes(p.id))p.groupId=groupId;
+      else if(p.groupId===groupId)p.groupId=null;
+    });
+    closeModal('group-members-modal');
+    renderGroupsNav();
+    renderProcesses();
+    toast('Members saved','success');
+  }
+}
+
+async function groupAction(groupId,action){
+  const g=groups.find(g=>g.id===groupId);
+  const r=await api('POST',`/api/groups/${groupId}/${action}`);
+  if(r)toast(`${action} → ${g?.name}`,'success');
+}
 
 // ── Init ──────────────────────────────────────
 connectWS();

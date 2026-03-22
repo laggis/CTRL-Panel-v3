@@ -59,6 +59,10 @@ class ConfigStore {
         cwd:         p.cwd,
         env:         p.env || {},
         autoRestart: p.autoRestart || 'never',
+        autoStart:   p.autoStart || false,
+        port:        p.port || null,
+        customCmd:   p.customCmd || null,
+        customArgs:  p.customArgs || null,
         description: p.description || '',
       }));
       fs.writeFileSync(this.filePath, JSON.stringify(toSave, null, 2));

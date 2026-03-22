@@ -4,20 +4,24 @@
 // ─────────────────────────────────────────────
 const { spawn }    = require('child_process');
 const { EventEmitter } = require('events');
+const net          = require('net');
 const os           = require('os');
 const path         = require('path');
 
+const IS_WIN = process.platform === 'win32';
+
 // How to launch each script type
 const LAUNCHERS = {
-  python:      { cmd: 'python3',        argsFn: (p) => [p] },
-  python2:     { cmd: 'python2',        argsFn: (p) => [p] },
-  node:        { cmd: 'node',           argsFn: (p) => [p] },
-  npm_start:   { cmd: process.platform === 'win32' ? 'npm.cmd' : 'npm', argsFn: (p) => ['start'] },
-  discord_py:  { cmd: 'python3',        argsFn: (p) => [p] },
-  discord_js:  { cmd: 'node',           argsFn: (p) => [p] },
-  shell:       { cmd: 'bash',           argsFn: (p) => [p] },
-  batch:       { cmd: 'cmd.exe',        argsFn: (p) => ['/c', p] },
-  powershell:  { cmd: 'powershell.exe', argsFn: (p) => ['-ExecutionPolicy', 'Bypass', '-File', p] },
+  // pythonw.exe = windowless Python binary on Windows — never flashes a console window
+  python:     { cmd: IS_WIN ? 'pythonw.exe'    : 'python3', argsFn: (p) => [p],                        shell: false },
+  python2:    { cmd: IS_WIN ? 'pythonw.exe'    : 'python2', argsFn: (p) => [p],                        shell: false },
+  node:       { cmd: IS_WIN ? 'node.exe'       : 'node',    argsFn: (p) => [p],                        shell: false },
+  npm_start:  { cmd: IS_WIN ? 'npm.cmd'        : 'npm',     argsFn: ()  => ['start'],                  shell: IS_WIN },
+  discord_py: { cmd: IS_WIN ? 'pythonw.exe'    : 'python3', argsFn: (p) => [p],                        shell: false },
+  discord_js: { cmd: IS_WIN ? 'node.exe'       : 'node',    argsFn: (p) => [p],                        shell: false },
+  shell:      { cmd: IS_WIN ? 'cmd.exe'        : 'bash',    argsFn: (p) => IS_WIN ? ['/c', p] : [p],   shell: false },
+  batch:      { cmd: 'cmd.exe',                              argsFn: (p) => ['/c', p],                  shell: false },
+  powershell: { cmd: IS_WIN ? 'powershell.exe' : 'pwsh',    argsFn: (p) => ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-File', p], shell: false },
 };
 
 const MAX_LOG_LINES = 500;
@@ -63,6 +67,9 @@ class ProcessManager extends EventEmitter {
       _stopRequested:  false,
       _restartTimer:   null,
       autoStart:       proc.autoStart || false,
+      port:            proc.port || null,   // optional port to verify after start
+      customCmd:       proc.customCmd || null,   // override launch command e.g. 'python3.12', 'py'
+      customArgs:      proc.customArgs || null,  // extra args appended after script path
       cpu:             '-',
       mem:             '-',
       logs:            [],
@@ -127,6 +134,9 @@ class ProcessManager extends EventEmitter {
       env:         r.env,
       autoRestart: r.autoRestart,
       autoStart:   r.autoStart || false,
+      port:        r.port || null,
+      customCmd:   r.customCmd || null,
+      customArgs:  r.customArgs || null,
       description: r.description || '',
       status:      r.status,
       pid:         r.pid,
@@ -141,7 +151,8 @@ class ProcessManager extends EventEmitter {
     this._initRuntime(procDef);
     this.config.save(Object.values(this.procs).map(r => ({
       id: r.id, name: r.name, type: r.type, path: r.path,
-      cwd: r.cwd, env: r.env, autoRestart: r.autoRestart, autoStart: r.autoStart || false, description: r.description,
+      cwd: r.cwd, env: r.env, autoRestart: r.autoRestart, autoStart: r.autoStart || false,
+      port: r.port || null, customCmd: r.customCmd || null, customArgs: r.customArgs || null, description: r.description,
     })));
     return this.get(procDef.id);
   }
@@ -150,11 +161,12 @@ class ProcessManager extends EventEmitter {
     const runtime = this.procs[id];
     if (!runtime) return null;
     // Allowed editable fields
-    const allowed = ['name', 'type', 'path', 'cwd', 'env', 'autoRestart', 'autoStart', 'description'];
+    const allowed = ['name', 'type', 'path', 'cwd', 'env', 'autoRestart', 'autoStart', 'port', 'customCmd', 'customArgs', 'description'];
     allowed.forEach(k => { if (fields[k] !== undefined) runtime[k] = fields[k]; });
     this.config.save(Object.values(this.procs).map(r => ({
       id: r.id, name: r.name, type: r.type, path: r.path,
-      cwd: r.cwd, env: r.env, autoRestart: r.autoRestart, autoStart: r.autoStart || false, description: r.description,
+      cwd: r.cwd, env: r.env, autoRestart: r.autoRestart, autoStart: r.autoStart || false,
+      port: r.port || null, customCmd: r.customCmd || null, customArgs: r.customArgs || null, description: r.description,
     })));
     return this.get(id);
   }
@@ -166,7 +178,8 @@ class ProcessManager extends EventEmitter {
     delete this.procs[id];
     this.config.save(Object.values(this.procs).map(r => ({
       id: r.id, name: r.name, type: r.type, path: r.path,
-      cwd: r.cwd, env: r.env, autoRestart: r.autoRestart, autoStart: r.autoStart || false, description: r.description,
+      cwd: r.cwd, env: r.env, autoRestart: r.autoRestart, autoStart: r.autoStart || false,
+      port: r.port || null, customCmd: r.customCmd || null, customArgs: r.customArgs || null, description: r.description,
     })));
     return true;
   }
@@ -179,12 +192,25 @@ class ProcessManager extends EventEmitter {
     const launcher = LAUNCHERS[runtime.type];
     if (!launcher) return { ok: false, error: `Unknown type: ${runtime.type}` };
 
-    const cmd  = launcher.cmd;
-    const args = launcher.argsFn(runtime.path);
+    // If a custom command is set, use it instead of the default launcher cmd.
+    // On Windows, if no extension given, try pythonw.exe for python-like commands,
+    // otherwise append .exe so Node can find it directly without shell:true.
+    const usingCustomCmd = !!(runtime.customCmd && runtime.customCmd.trim());
+    let rawCmd = usingCustomCmd ? runtime.customCmd.trim() : launcher.cmd;
+    if (IS_WIN && usingCustomCmd && !path.extname(rawCmd)) {
+      // If it looks like a python command, use the windowless variant
+      rawCmd = /^python/i.test(rawCmd) ? 'pythonw.exe' : rawCmd + '.exe';
+    }
+    const shell = usingCustomCmd ? false : (launcher.shell || false);
+    const baseArgs = launcher.argsFn(runtime.path);
+    const extraArgs = runtime.customArgs ? runtime.customArgs.trim().split(/\s+/).filter(Boolean) : [];
+    const args = [...baseArgs, ...extraArgs];
+    const cmd  = rawCmd;
+
     const env  = { ...process.env, ...runtime.env };
     const cwd  = runtime.cwd || path.dirname(runtime.path);
 
-    this._log(id, 'info', `Starting: ${cmd} ${args.join(' ')}`);
+    this._log(id, 'info', `Starting: ${cmd} ${args.join(' ')}${runtime.customCmd ? ` [custom cmd: ${runtime.customCmd}]` : ''}`);
     this._setStatus(id, 'starting');
 
     let child;
@@ -193,7 +219,8 @@ class ProcessManager extends EventEmitter {
         cwd,
         env,
         stdio: ['pipe', 'pipe', 'pipe'],
-        shell: process.platform === 'win32',  // required for .cmd files on Windows
+        shell,
+        windowsHide: true,
       });
     } catch (err) {
       this._log(id, 'error', `Failed to spawn: ${err.message}`);
@@ -206,8 +233,29 @@ class ProcessManager extends EventEmitter {
     runtime.crashCount   = 0;   // reset consecutive failure counter on each successful spawn
     runtime._stopRequested = false;
     if (runtime._restartTimer) { clearTimeout(runtime._restartTimer); runtime._restartTimer = null; }
-    this._setStatus(id, 'running', child.pid);
     this._log(id, 'ok', `Process started (PID ${child.pid})`);
+
+    // If a port is configured, stay in 'starting' until the port is actually listening.
+    // This prevents the panel from showing 'running' while the script is still booting.
+    if (runtime.port) {
+      this._setStatus(id, 'starting', child.pid);
+      this._log(id, 'info', `Waiting for port ${runtime.port} to open...`);
+      waitForPort(runtime.port, 30000).then(opened => {
+        // Only flip to running if the process is still alive and we didn't request a stop
+        if (!runtime._stopRequested && runtime.child && runtime.child.pid === child.pid) {
+          if (opened) {
+            this._setStatus(id, 'running', child.pid);
+            this._log(id, 'ok', `Port ${runtime.port} is open — process confirmed running`);
+          } else {
+            this._log(id, 'warn', `Port ${runtime.port} did not open within 30s — process may have failed to bind`);
+            // Still mark running if the process is alive; the script might not use a port yet
+            if (runtime.child) this._setStatus(id, 'running', child.pid);
+          }
+        }
+      });
+    } else {
+      this._setStatus(id, 'running', child.pid);
+    }
 
     // Stream stdout
     child.stdout.on('data', data => {
@@ -253,7 +301,8 @@ class ProcessManager extends EventEmitter {
               this.webhook.notifyMaxRestarts(runtime.name, MAX_RESTARTS);
             }
           } else {
-            const delay = Math.min(1000 * Math.pow(2, Math.min(runtime.restarts, 5)), 30000);
+            // Minimum 10s delay so slow-shutting scripts have time to fully exit
+            const delay = Math.max(10000, Math.min(1000 * Math.pow(2, Math.min(runtime.restarts, 5)), 30000));
             this._log(id, 'warn',
               `Auto-restarting in ${delay/1000}s... (attempt ${runtime.crashCount}/${MAX_RESTARTS})`
             );
@@ -323,6 +372,12 @@ class ProcessManager extends EventEmitter {
     runtime.crashCount = 0;  // reset crash loop counter on manual restart
 
     if (runtime.child) await this.stop(id);
+
+    // Wait 10s before restarting — gives slow/weird-shutdown scripts time to fully exit
+    this._log(id, 'info', 'Waiting 10s before restart to allow full shutdown...');
+    this._setStatus(id, 'restarting');
+    await new Promise(resolve => setTimeout(resolve, 10000));
+
     return this.start(id);
   }
 
@@ -377,7 +432,8 @@ class ProcessManager extends EventEmitter {
       const child = spawn(cmd, args, {
         cwd,
         stdio: ['ignore', 'pipe', 'pipe'],
-        shell: process.platform === 'win32',  // required for .cmd files on Windows
+        shell: process.platform === 'win32' && cmd.endsWith('.cmd'), // only for npm.cmd
+        windowsHide: true,
       });
 
       child.stdout.on('data', d => onData?.('out', d.toString()));
@@ -431,6 +487,28 @@ async function getProcStats(pid) {
 function formatMem(bytes) {
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
   return `${Math.round(bytes / 1024 / 1024)} MB`;
+}
+
+// Polls a TCP port until it accepts a connection (process is truly up) or times out.
+// Tries every 500ms for up to `timeoutMs` milliseconds.
+// Returns true if port opened, false if timed out.
+function waitForPort(port, timeoutMs = 30000) {
+  return new Promise((resolve) => {
+    const started = Date.now();
+    function attempt() {
+      const sock = new net.Socket();
+      sock.setTimeout(500);
+      sock.on('connect', () => { sock.destroy(); resolve(true); });
+      sock.on('error',   () => { sock.destroy(); retry(); });
+      sock.on('timeout', () => { sock.destroy(); retry(); });
+      sock.connect(port, '127.0.0.1');
+    }
+    function retry() {
+      if (Date.now() - started >= timeoutMs) return resolve(false);
+      setTimeout(attempt, 500);
+    }
+    attempt();
+  });
 }
 
 module.exports = ProcessManager;

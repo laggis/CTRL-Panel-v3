@@ -21,11 +21,28 @@ const WebhookManager = require('./webhookManager');
 const app    = express();
 const server = http.createServer(app);
 const wss    = new WebSocketServer({ server });
-const PORT   = process.env.PORT || 3001;
+const PORT   = process.env.PORT || 20006;
+
+// ── Zoraxy / reverse-proxy trust ──────────────
+// Required so Express sees the real client IP from Zoraxy's X-Forwarded-For header.
+// Without this, rate limiting and auth logging see Zoraxy's local IP instead of
+// the actual visitor's IP, which would cause all users to share one rate-limit bucket.
+app.set('trust proxy', 1);
 
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '../frontend')));
+
+// ── Rate limiters ─────────────────────────────
+// General API limiter — 200 requests/min per IP (covers all /api/* routes)
+const apiLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 200,
+  standardHeaders: true,   // Return RateLimit-* headers so Zoraxy / clients can see limits
+  legacyHeaders: false,
+  message: { error: 'Too many requests, slow down' },
+});
+app.use('/api/', apiLimiter);
 
 const loginLimiter = rateLimit({ windowMs: 15*60*1000, max: 20, message: { error: 'Too many attempts' } });
 
@@ -46,6 +63,23 @@ let notesStore = {};
 const notesFile = path.join(__dirname, 'notes.json');
 try { if (require('fs').existsSync(notesFile)) notesStore = JSON.parse(require('fs').readFileSync(notesFile,'utf-8')); } catch(_) {}
 function saveNotes() { require('fs').writeFileSync(notesFile, JSON.stringify(notesStore, null, 2)); }
+
+// Groups store: [{ id, name, color, icon }]
+// groupMembers store: { [groupId]: processId[] }
+let groupsStore = [];
+let groupMembersStore = {};
+const groupsFile = path.join(__dirname, 'groups.json');
+try {
+  if (require('fs').existsSync(groupsFile)) {
+    const raw = JSON.parse(require('fs').readFileSync(groupsFile,'utf-8'));
+    // Support both old flat array and new {groups, members} format
+    if (Array.isArray(raw)) { groupsStore = raw; }
+    else { groupsStore = raw.groups||[]; groupMembersStore = raw.members||{}; }
+  }
+} catch(_) {}
+function saveGroups() {
+  require('fs').writeFileSync(groupsFile, JSON.stringify({ groups: groupsStore, members: groupMembersStore }, null, 2));
+}
 
 const uptimeHistory = {};
 const UPTIME_MAX    = 288;
@@ -102,7 +136,12 @@ wss.on('connection', (ws) => {
 });
 
 function enrichProcesses(procs) {
-  return procs.map(p => ({ ...p, tags: tagsStore[p.id]||[], notes: notesStore[p.id]||'' }));
+  // Build reverse map: processId → groupId
+  const procGroup = {};
+  Object.entries(groupMembersStore).forEach(([gid, members]) => {
+    (members||[]).forEach(pid => { procGroup[pid] = gid; });
+  });
+  return procs.map(p => ({ ...p, tags: tagsStore[p.id]||[], notes: notesStore[p.id]||'', groupId: procGroup[p.id]||null }));
 }
 
 function recordUptime(id, status) {
@@ -231,9 +270,9 @@ app.get('/api/fs/browse', auth.middleware('view'), (req, res) => {
 });
 
 app.post('/api/processes', auth.middleware('add'), (req, res) => {
-  const { name, type, path: sp, cwd, env, autoRestart, autoStart, description } = req.body;
+  const { name, type, path: sp, cwd, env, autoRestart, autoStart, description, customCmd, customArgs } = req.body;
   if (!name || !sp) return res.status(400).json({ error: 'name and path required' });
-  const proc = manager.add({ id: uuidv4(), name, type: type||'python', path: sp, cwd: cwd||path.dirname(sp), env: parseEnvStr(env||''), autoRestart: autoRestart||'never', autoStart: !!autoStart, description: description||'' });
+  const proc = manager.add({ id: uuidv4(), name, type: type||'python', path: sp, cwd: cwd||path.dirname(sp), env: parseEnvStr(env||''), autoRestart: autoRestart||'never', autoStart: !!autoStart, description: description||'', port: req.body.port||null, customCmd: customCmd||null, customArgs: customArgs||null });
   if (req.body.tags) { tagsStore[proc.id] = req.body.tags; saveTags(); }
   if (req.body.notes) { notesStore[proc.id] = req.body.notes; saveNotes(); }
   const enriched = { ...proc, tags: tagsStore[proc.id]||[], notes: notesStore[proc.id]||'' };
@@ -245,6 +284,11 @@ app.delete('/api/processes/:id', auth.middleware('delete'), (req, res) => {
   if (!manager.remove(req.params.id)) return res.status(404).json({ error: 'Not found' });
   delete tagsStore[req.params.id]; saveTags();
   delete notesStore[req.params.id]; saveNotes();
+  // Remove from any group
+  Object.keys(groupMembersStore).forEach(gid => {
+    groupMembersStore[gid] = (groupMembersStore[gid]||[]).filter(pid => pid !== req.params.id);
+  });
+  saveGroups();
   broadcast({ event: 'process_removed', id: req.params.id });
   res.json({ ok: true });
 });
@@ -365,6 +409,84 @@ app.delete('/api/schedules/:id', auth.middleware('restart'), (req, res) => {
 app.patch('/api/schedules/:id/toggle', auth.middleware('restart'), (req, res) => {
   try { const j = scheduler.toggle(req.params.id); broadcast({ event: 'schedule_updated', job: j }); res.json(j); }
   catch (e) { res.status(400).json({ error: e.message }); }
+});
+
+// ── Groups ─────────────────────────────────────
+// GET  /api/groups              → list all groups with member counts
+// POST /api/groups              → create group  { name, color, icon }
+// PATCH /api/groups/:id         → rename/recolor { name?, color?, icon? }
+// DELETE /api/groups/:id        → delete group (members stay, just unassigned)
+// GET  /api/groups/:id/members  → list process ids in group
+// POST /api/groups/:id/members  → set members { processIds: [] }
+// POST /api/groups/:id/start    → start all processes in group
+// POST /api/groups/:id/stop     → stop all processes in group
+// POST /api/groups/:id/restart  → restart all processes in group
+
+app.get('/api/groups', auth.middleware('view'), (req, res) => {
+  const result = groupsStore.map(g => ({
+    ...g,
+    memberCount: (groupMembersStore[g.id]||[]).length,
+    members: groupMembersStore[g.id]||[],
+  }));
+  res.json(result);
+});
+
+app.post('/api/groups', auth.middleware('add'), (req, res) => {
+  const { name, color, icon } = req.body;
+  if (!name) return res.status(400).json({ error: 'name required' });
+  const group = { id: uuidv4(), name: String(name).slice(0,40), color: color||'#00d4ff', icon: icon||'📁' };
+  groupsStore.push(group);
+  groupMembersStore[group.id] = [];
+  saveGroups();
+  broadcast({ event: 'group_created', group: { ...group, members: [], memberCount: 0 } });
+  res.status(201).json(group);
+});
+
+app.patch('/api/groups/:id', auth.middleware('add'), (req, res) => {
+  const g = groupsStore.find(g => g.id === req.params.id);
+  if (!g) return res.status(404).json({ error: 'Not found' });
+  if (req.body.name  !== undefined) g.name  = String(req.body.name).slice(0,40);
+  if (req.body.color !== undefined) g.color = req.body.color;
+  if (req.body.icon  !== undefined) g.icon  = req.body.icon;
+  saveGroups();
+  broadcast({ event: 'group_updated', group: { ...g, members: groupMembersStore[g.id]||[], memberCount: (groupMembersStore[g.id]||[]).length } });
+  res.json(g);
+});
+
+app.delete('/api/groups/:id', auth.middleware('delete'), (req, res) => {
+  const idx = groupsStore.findIndex(g => g.id === req.params.id);
+  if (idx === -1) return res.status(404).json({ error: 'Not found' });
+  groupsStore.splice(idx, 1);
+  delete groupMembersStore[req.params.id];
+  saveGroups();
+  broadcast({ event: 'group_deleted', id: req.params.id });
+  res.json({ ok: true });
+});
+
+app.post('/api/groups/:id/members', auth.middleware('add'), (req, res) => {
+  const g = groupsStore.find(g => g.id === req.params.id);
+  if (!g) return res.status(404).json({ error: 'Not found' });
+  const ids = (req.body.processIds||[]).filter(id => manager.procs[id]);
+  // Remove this group from any process currently in it, then reassign
+  groupMembersStore[g.id] = ids;
+  // Also make sure a process isn't in two groups — remove from any other group
+  groupsStore.forEach(other => {
+    if (other.id !== g.id) {
+      groupMembersStore[other.id] = (groupMembersStore[other.id]||[]).filter(pid => !ids.includes(pid));
+    }
+  });
+  saveGroups();
+  broadcast({ event: 'group_updated', group: { ...g, members: ids, memberCount: ids.length } });
+  res.json({ ok: true, members: ids });
+});
+
+app.post('/api/groups/:id/:action(start|stop|restart)', auth.middleware('restart'), async (req, res) => {
+  const g = groupsStore.find(g => g.id === req.params.id);
+  if (!g) return res.status(404).json({ error: 'Not found' });
+  const members = groupMembersStore[g.id]||[];
+  const action = req.params.action;
+  const results = await Promise.all(members.map(pid => manager[action] ? manager[action](pid) : Promise.resolve({ ok: false })));
+  res.json({ ok: true, results });
 });
 
 // ── Webhook settings ───────────────────────────
